@@ -1,0 +1,354 @@
+bash -v testing.sh
+switchml () {  typeset swfound=1;
+ if [ "${MODULES_USE_COMPAT_VERSION:-0}" = '1' ]; then
+ typeset swname='main';
+ if [ -e /usr/share/Modules/libexec/modulecmd.tcl ]; then
+ typeset swfound=0;
+ unset MODULES_USE_COMPAT_VERSION;
+ fi;
+ else
+ typeset swname='compatibility';
+ if [ -e /usr/share/Modules/libexec/modulecmd-compat ]; then
+ typeset swfound=0;
+ MODULES_USE_COMPAT_VERSION=1;
+ export MODULES_USE_COMPAT_VERSION;
+ fi;
+ fi;
+ if [ $swfound -eq 0 ]; then
+ echo "Switching to Modules $swname version";
+ source /usr/share/Modules/init/bash;
+ else
+ echo "Cannot switch to Modules $swname version, command not found";
+ return 1;
+ fi
+}
+module () {  unset _mlshdbg;
+ if [ "${MODULES_SILENT_SHELL_DEBUG:-0}" = '1' ]; then
+ case "$-" in 
+ *v*x*)
+ set +vx;
+ _mlshdbg='vx'
+ ;;
+ *v*)
+ set +v;
+ _mlshdbg='v'
+ ;;
+ *x*)
+ set +x;
+ _mlshdbg='x'
+ ;;
+ *)
+ _mlshdbg=''
+ ;;
+ esac;
+ fi;
+ unset _mlre _mlIFS;
+ if [ -n "${IFS+x}" ]; then
+ _mlIFS=$IFS;
+ fi;
+ IFS=' ';
+ for _mlv in ${MODULES_RUN_QUARANTINE:-};
+ do
+ if [ "${_mlv}" = "${_mlv##*[!A-Za-z0-9_]}" -a "${_mlv}" = "${_mlv#[0-9]}" ]; then
+ if [ -n "`eval 'echo ${'$_mlv'+x}'`" ]; then
+ _mlre="${_mlre:-}${_mlv}_modquar='`eval 'echo ${'$_mlv'}'`' ";
+ fi;
+ _mlrv="MODULES_RUNENV_${_mlv}";
+ _mlre="${_mlre:-}${_mlv}='`eval 'echo ${'$_mlrv':-}'`' ";
+ fi;
+ done;
+ if [ -n "${_mlre:-}" ]; then
+ eval `eval ${_mlre}/usr/bin/tclsh /usr/share/Modules/libexec/modulecmd.tcl bash '"$@"'`;
+ else
+ eval `/usr/bin/tclsh /usr/share/Modules/libexec/modulecmd.tcl bash "$@"`;
+ fi;
+ _mlstatus=$?;
+ if [ -n "${_mlIFS+x}" ]; then
+ IFS=$_mlIFS;
+ else
+ unset IFS;
+ fi;
+ unset _mlre _mlv _mlrv _mlIFS;
+ if [ -n "${_mlshdbg:-}" ]; then
+ set -$_mlshdbg;
+ fi;
+ unset _mlshdbg;
+ return $_mlstatus
+}
+# !/bin/bash
+# Testing script for crawler.c
+# Author: Sabrina Jain
+# Date: February 8, 2020
+#
+# usage: bash -v testing.sh
+
+# Define variables
+seedURL=http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/index.html
+seedURL2=http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/A.html
+seedURLWiki=http://old-www.cs.dartmouth.edu/~cs50/data/tse/wikipedia/
+externalURL=www.google.com
+nonexistentURL=http://old-www.cs.dartmouth.edu/badurlhaha.html
+
+mkdir ../data
+
+#####################################
+### FAILING TESTS ###
+
+# 1 argument
+./crawler
+usage: crawler seedURL pageDirectory maxDepth
+
+# 2 arguments
+./crawler $seedURL
+usage: crawler seedURL pageDirectory maxDepth
+
+# 3 arguments
+./crawler $seedURL ../data 
+usage: crawler seedURL pageDirectory maxDepth
+
+# 4 arguments + externalURL
+./crawler $externalURL ../data 2
+URL is not internal
+
+#Testing 4 arguments and a nonexistent page within a internal server
+#(Note: Program will still insert seed URL originally into seen URLS)"
+#^ That's what it should do so we're chillin'"
+./crawler $nonexistentURL ../data 2
+Invalid page, no HTML
+Inserted http://old-www.cs.dartmouth.edu/badurlhaha.html (seed url)
+
+# 4 arguments + bad page directory
+./crawler $nonexistentURL data 2
+Page directory given is invalid
+
+# 4 arguments + invalid max depth
+./crawler $nonexistentURL ../data x2
+Invalid page depth given
+
+# 4 arguments + max depth less than zero
+./crawler $nonexistentURL ../data -2
+Max depth less than 0
+
+
+######################################
+### PASSING TESTS ####
+
+mkdir ../data/test1
+mkdir ../data/test1/d0
+mkdir ../data/test1/d1
+mkdir ../data/test1/d2
+mkdir ../data/test1/d3
+mkdir ../data/test1/d4
+mkdir ../data/test1/d5
+
+
+#Testing simple site at depth 0
+./crawler $seedURL ../data/test1/d0 0
+Inserted http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/index.html (seed url)
+
+#Testing simple site at depth 1
+./crawler $seedURL ../data/test1/d1 1
+Inserted http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/index.html (seed url)
+Exploring URL: http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/index.html
+Inserted http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/A.html
+
+#Testing simple site at depth 2
+./crawler $seedURL ../data/test1/d2 2
+Inserted http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/index.html (seed url)
+Exploring URL: http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/index.html
+Inserted http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/A.html
+Exploring URL: http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/A.html
+Inserted http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/B.html
+
+#Testing simple site at depth 3
+./crawler $seedURL ../data/test1/d3 3
+Inserted http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/index.html (seed url)
+Exploring URL: http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/index.html
+Inserted http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/A.html
+Exploring URL: http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/A.html
+Inserted http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/B.html
+Exploring URL: http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/B.html
+Inserted http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/C.html
+Inserted http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/D.html
+Inserted http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/E.html
+
+#Testing simple site at depth 4
+./crawler $seedURL ../data/test1/d4 4
+Inserted http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/index.html (seed url)
+Exploring URL: http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/index.html
+Inserted http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/A.html
+Exploring URL: http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/A.html
+Inserted http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/B.html
+Exploring URL: http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/B.html
+Inserted http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/C.html
+Exploring URL: http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/C.html
+Inserted http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/D.html
+Inserted http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/E.html
+Exploring URL: http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/E.html
+Inserted http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/F.html
+Inserted http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/G.html
+
+#Testing simple site at depth 5
+./crawler $seedURL ../data/test1/d5 5
+Inserted http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/index.html (seed url)
+Exploring URL: http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/index.html
+Inserted http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/A.html
+Exploring URL: http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/A.html
+Inserted http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/B.html
+Exploring URL: http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/B.html
+Inserted http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/C.html
+Exploring URL: http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/C.html
+Inserted http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/D.html
+Exploring URL: http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/D.html
+Inserted http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/E.html
+Exploring URL: http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/E.html
+Inserted http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/F.html
+Exploring URL: http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/F.html
+Inserted http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/H.html
+Inserted http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/G.html
+Exploring URL: http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/G.html
+
+
+#Repeat with different seed on same site
+
+mkdir ../data/test2
+mkdir ../data/test2/d0
+mkdir ../data/test2/d1
+mkdir ../data/test2/d2
+mkdir ../data/test2/d3
+mkdir ../data/test2/d4
+mkdir ../data/test2/d5
+
+#Testing simple site from different seed page at depth 0
+./crawler $seedURL2 ../data/test2/d0 0
+Inserted http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/A.html (seed url)
+
+#Testing simple site from different seed page at depth 1
+./crawler $seedURL2 ../data/test2/d1 1
+Inserted http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/A.html (seed url)
+Exploring URL: http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/A.html
+Inserted http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/B.html
+Inserted http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/index.html
+
+#Testing simple site from different seed page at depth 2
+./crawler $seedURL2 ../data/test2/d2 2
+Inserted http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/A.html (seed url)
+Exploring URL: http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/A.html
+Inserted http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/B.html
+Exploring URL: http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/B.html
+Inserted http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/C.html
+Inserted http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/D.html
+Inserted http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/E.html
+Inserted http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/index.html
+
+#Testing simple site from different seed page at depth 3
+./crawler $seedURL2 ../data/test2/d3 3
+Inserted http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/A.html (seed url)
+Exploring URL: http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/A.html
+Inserted http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/B.html
+Exploring URL: http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/B.html
+Inserted http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/C.html
+Exploring URL: http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/C.html
+Inserted http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/D.html
+Inserted http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/index.html
+Inserted http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/E.html
+Exploring URL: http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/E.html
+Inserted http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/F.html
+Inserted http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/G.html
+
+#Testing simple site from different seed page at depth 4
+./crawler $seedURL2 ../data/test2/d4 4
+Inserted http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/A.html (seed url)
+Exploring URL: http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/A.html
+Inserted http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/B.html
+Exploring URL: http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/B.html
+Inserted http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/C.html
+Exploring URL: http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/C.html
+Inserted http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/D.html
+Exploring URL: http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/D.html
+Inserted http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/index.html
+Inserted http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/E.html
+Exploring URL: http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/E.html
+Inserted http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/F.html
+Exploring URL: http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/F.html
+Inserted http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/H.html
+Inserted http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/G.html
+Exploring URL: http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/G.html
+
+#Testing simple site from different seed page at depth 5
+./crawler $seedURL2 ../data/test2/d5 5
+Inserted http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/A.html (seed url)
+Exploring URL: http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/A.html
+Inserted http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/B.html
+Exploring URL: http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/B.html
+Inserted http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/C.html
+Exploring URL: http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/C.html
+Inserted http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/D.html
+Exploring URL: http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/D.html
+Inserted http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/index.html
+Exploring URL: http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/index.html
+Inserted http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/E.html
+Exploring URL: http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/E.html
+Inserted http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/F.html
+Exploring URL: http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/F.html
+Inserted http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/H.html
+Exploring URL: http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/H.html
+Inserted http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/G.html
+Exploring URL: http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/G.html
+
+echo ""
+
+
+##Wikipedia
+
+mkdir ../data/wikipedia
+mkdir ../data/wikipedia/d0
+mkdir ../data/wikipedia/d1
+
+#Testing wiki playground at depth 0: 
+./crawler $seedURLWiki ../data/wikipedia/d0 0
+Inserted http://old-www.cs.dartmouth.edu/~cs50/data/tse/wikipedia/ (seed url)
+
+#Testing wiki playground at depth 1: 
+./crawler $seedURLWiki ../data/wikipedia/d1 1
+Inserted http://old-www.cs.dartmouth.edu/~cs50/data/tse/wikipedia/ (seed url)
+Exploring URL: http://old-www.cs.dartmouth.edu/~cs50/data/tse/wikipedia/
+Inserted http://old-www.cs.dartmouth.edu/~cs50/data/tse/wikipedia/Computer_science.html
+Inserted http://old-www.cs.dartmouth.edu/~cs50/data/tse/wikipedia/C_(programming_language).html
+Inserted http://old-www.cs.dartmouth.edu/~cs50/data/tse/wikipedia/Unix.html
+Inserted http://old-www.cs.dartmouth.edu/~cs50/data/tse/wikipedia/Dartmouth_College.html
+Inserted http://old-www.cs.dartmouth.edu/~cs50/data/tse/wikipedia/Hash_table.html
+Inserted http://old-www.cs.dartmouth.edu/~cs50/data/tse/wikipedia/Linked_list.html
+
+#Testing depth 2 of the wiki playground would result in over 2000 lines of code
+#I don't want to put either one of us through that pain again
+
+
+#testing at a greater depth
+
+#at depth 10
+
+mkdir ../data/test1/d10
+
+#Testing at depth 10
+./crawler $seedURL ../data/test1/d10 10
+Inserted http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/index.html (seed url)
+Exploring URL: http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/index.html
+Inserted http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/A.html
+Exploring URL: http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/A.html
+Inserted http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/B.html
+Exploring URL: http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/B.html
+Inserted http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/C.html
+Exploring URL: http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/C.html
+Inserted http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/D.html
+Exploring URL: http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/D.html
+Inserted http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/E.html
+Exploring URL: http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/E.html
+Inserted http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/F.html
+Exploring URL: http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/F.html
+Inserted http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/H.html
+Exploring URL: http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/H.html
+Inserted http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/G.html
+Exploring URL: http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/G.html
+
+exit

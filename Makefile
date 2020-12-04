@@ -1,42 +1,35 @@
-# Makefile for Querier
+# Makefile for CS50 Tiny Search Engine
 #
-# Sabrina Jain, February 2020
+# David Kotz - April 2016, 2017
+# Updated by Temi Prioleau, January 2020
 
-C = ../common
-L = ../libcs50
-
-PROGS = querier fuzzquery
-LIBS = 
-LLIBS = $C/common.a $L/libcs50.a 
-
-# Names of macros (to use, take #s out of FLAGS)
-# add -DAPPEST for functional tracking report
-# add -DMEMTEST for memory tracking report
-FLAGS = # -DAPPTEST # -DMEMTEST
-
-CFLAGS = -Wall -pedantic -std=gnu11 -ggdb $(FLAGS) -I$L -I$C 
-CC = gcc
 MAKE = make
+.PHONY: all valgrind clean
 
-.PHONY: all test clean
+############## default: make all libs and programs ##########
+all: 
+	$(MAKE) -C libcs50
+	$(MAKE) -C common
+	$(MAKE) -C crawler
+	$(MAKE) -C indexer
+	$(MAKE) -C querier
 
-all: $(PROGS) 
- 
-querier.o: $L/file.h $C/word.h $L/memory.h $C/pagedir.h $C/index.h $L/set.h $L/hashtable.h $L/counters.h
-fuzzquery.o: $L/file.h $L/memory.h
+############## valgrind all programs ##########
+valgrind: all
+	$(MAKE) -C crawler valgrind
+	$(MAKE) -C indexer valgrind
+	$(MAKE) -C querier valgrind
 
-querier: querier.o  
-	$(CC) $(CFLAGS) querier.o $(LLIBS) -o querier
-fuzzquery: fuzzquery.o  
-	$(CC) $(CFLAGS) fuzzquery.o $(LLIBS) -o fuzzquery
+############### TAGS for emacs users ##########
+TAGS:  Makefile */Makefile */*.c */*.h */*.md */*.sh
+	etags $^
 
-#####test#####
-test: querier testing.sh
-	bash -v testing.sh 
-	
-####clean######
+############## clean  ##########
 clean:
-	rm -f core
-	rm -rf *~ *o *.dSYM
-	rm -rf $(TEST_DATA)
-	rm -f $(PROGS)
+	rm -f *~
+	rm -f TAGS
+	$(MAKE) -C libcs50 clean
+	$(MAKE) -C common clean
+	$(MAKE) -C crawler clean
+	$(MAKE) -C indexer clean
+	$(MAKE) -C querier clean

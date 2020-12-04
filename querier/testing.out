@@ -1,0 +1,579 @@
+gcc -Wall -pedantic -std=gnu11 -ggdb  -I../libcs50 -I../common    -c -o querier.o querier.c
+gcc -Wall -pedantic -std=gnu11 -ggdb  -I../libcs50 -I../common  querier.o ../common/common.a ../libcs50/libcs50.a  -o querier
+bash -v testing.sh 
+switchml () {  typeset swfound=1;
+ if [ "${MODULES_USE_COMPAT_VERSION:-0}" = '1' ]; then
+ typeset swname='main';
+ if [ -e /usr/share/Modules/libexec/modulecmd.tcl ]; then
+ typeset swfound=0;
+ unset MODULES_USE_COMPAT_VERSION;
+ fi;
+ else
+ typeset swname='compatibility';
+ if [ -e /usr/share/Modules/libexec/modulecmd-compat ]; then
+ typeset swfound=0;
+ MODULES_USE_COMPAT_VERSION=1;
+ export MODULES_USE_COMPAT_VERSION;
+ fi;
+ fi;
+ if [ $swfound -eq 0 ]; then
+ echo "Switching to Modules $swname version";
+ source /usr/share/Modules/init/bash;
+ else
+ echo "Cannot switch to Modules $swname version, command not found";
+ return 1;
+ fi
+}
+module () {  unset _mlshdbg;
+ if [ "${MODULES_SILENT_SHELL_DEBUG:-0}" = '1' ]; then
+ case "$-" in 
+ *v*x*)
+ set +vx;
+ _mlshdbg='vx'
+ ;;
+ *v*)
+ set +v;
+ _mlshdbg='v'
+ ;;
+ *x*)
+ set +x;
+ _mlshdbg='x'
+ ;;
+ *)
+ _mlshdbg=''
+ ;;
+ esac;
+ fi;
+ unset _mlre _mlIFS;
+ if [ -n "${IFS+x}" ]; then
+ _mlIFS=$IFS;
+ fi;
+ IFS=' ';
+ for _mlv in ${MODULES_RUN_QUARANTINE:-};
+ do
+ if [ "${_mlv}" = "${_mlv##*[!A-Za-z0-9_]}" -a "${_mlv}" = "${_mlv#[0-9]}" ]; then
+ if [ -n "`eval 'echo ${'$_mlv'+x}'`" ]; then
+ _mlre="${_mlre:-}${_mlv}_modquar='`eval 'echo ${'$_mlv'}'`' ";
+ fi;
+ _mlrv="MODULES_RUNENV_${_mlv}";
+ _mlre="${_mlre:-}${_mlv}='`eval 'echo ${'$_mlrv':-}'`' ";
+ fi;
+ done;
+ if [ -n "${_mlre:-}" ]; then
+ eval `eval ${_mlre}/usr/bin/tclsh /usr/share/Modules/libexec/modulecmd.tcl bash '"$@"'`;
+ else
+ eval `/usr/bin/tclsh /usr/share/Modules/libexec/modulecmd.tcl bash "$@"`;
+ fi;
+ _mlstatus=$?;
+ if [ -n "${_mlIFS+x}" ]; then
+ IFS=$_mlIFS;
+ else
+ unset IFS;
+ fi;
+ unset _mlre _mlv _mlrv _mlIFS;
+ if [ -n "${_mlshdbg:-}" ]; then
+ set -$_mlshdbg;
+ fi;
+ unset _mlshdbg;
+ return $_mlstatus
+}
+# !/bin/bash
+# Testing script for querier.c
+# Author: Sabrina Jain
+# Date: February 24, 2020
+#
+# usage: bash -v testing.sh
+
+#copy given output into data file to test
+#Note: my crawler and indexer work correctly, but just to be safe 
+#mkdir ../data
+#mkdir ../data/indexes
+#cp -r ~cs50/data/tse-output ../data
+
+##TESTS
+
+## Failing tests (Command-Line Arguments):
+
+# 1 argument
+./querier
+usage: ./querier page_directory Index_file_name
+
+# 2 arguments
+./querier ../data/tse-output/letters-depth-0
+usage: ./querier page_directory Index_file_name
+
+# 3 arguments + non-existent directory
+./querier ../data/tse-output/idontexist ../data/tse-output/letters-index-0 
+Not a crawler-produced directory or directory does not exist
+
+# 3 arguments + non-crawler directory
+./querier ../data/indexes ../data/tse-output/letters-index-0 
+Not a crawler-produced directory or directory does not exist
+
+#3 arugments + valid directory + nonexistent index file
+./querier ../data/tse-output/letters-depth-0 ../data/tse-output/letters-index-90
+Index file not readable
+
+#create unreadableindexfile
+touch ../data/indexes/unwriteablefile
+chmod -r ../data/indexes/unwriteablefile
+
+#3 arugments + valid directory + unreadable file
+./querier ../data/tse-output/letters-depth-0 ../data/indexes/unwriteablefile
+Index file not readable
+rm -f ../data/indexes/unwriteablefile
+
+## Failing tests (Query Input)
+
+#Bad queries (see TESTING.md for details of specific cases)
+./querier ../data/tse-output/letters-depth-0 ../data/tse-output/letters-index-0 < badinput.txt
+'and' can't begin query
+'or' can't begin query
+'and' and 'and' can't be adjacent
+'or' and 'or' can't be adjacent
+'and' can't be at the end of query
+Bad character '6'
+Bad character '-'
+Query: and so i said
+-------------------------------------------------------------
+Query: or we could do this
+-------------------------------------------------------------
+Query: but i wanted to do this and and this
+-------------------------------------------------------------
+Query: im so indecisive or or yes
+-------------------------------------------------------------
+Query: dont end a sentence with and
+-------------------------------------------------------------
+Query: dont end a sentence with ors
+No docments match
+-------------------------------------------------------------
+-------------------------------------------------------------
+-------------------------------------------------------------
+
+##Letters test
+./querier ../data/tse-output/letters-depth-0 ../data/tse-output/letters-index-0 < letterstest.txt
+Query: home or page
+Matches 1 documents (ranked): 
+score     3  doc      1 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/index.html
+-------------------------------------------------------------
+Query: home and page
+Matches 1 documents (ranked): 
+score     1  doc      1 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/index.html
+-------------------------------------------------------------
+Query: home page
+Matches 1 documents (ranked): 
+score     1  doc      1 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/index.html
+-------------------------------------------------------------
+Query: home page or playground
+Matches 1 documents (ranked): 
+score     2  doc      1 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/index.html
+-------------------------------------------------------------
+Query: home page playground and this
+Matches 1 documents (ranked): 
+score     1  doc      1 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/index.html
+-------------------------------------------------------------
+Query: playground or this or home and page or tse
+Matches 1 documents (ranked): 
+score     4  doc      1 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/index.html
+-------------------------------------------------------------
+Query: playground or this or home and page or tse
+Matches 1 documents (ranked): 
+score     4  doc      1 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/index.html
+-------------------------------------------------------------
+Query: we or went or to or the or home
+Matches 1 documents (ranked): 
+score     3  doc      1 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/index.html
+-------------------------------------------------------------
+Query: tse or for breadth or the first
+Matches 1 documents (ranked): 
+score     1  doc      1 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/index.html
+-------------------------------------------------------------
+Query: tse this or biology
+Matches 1 documents (ranked): 
+score     1  doc      1 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/index.html
+-------------------------------------------------------------
+./querier ../data/tse-output/letters-depth-3 ../data/tse-output/letters-index-3 < letterstest.txt
+Query: home or page
+Matches 6 documents (ranked): 
+score     3  doc      1 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/index.html
+score     1  doc      2 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/A.html
+score     1  doc      3 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/B.html
+score     1  doc      4 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/E.html
+score     1  doc      5 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/D.html
+score     1  doc      6 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/C.html
+-------------------------------------------------------------
+Query: home and page
+Matches 1 documents (ranked): 
+score     1  doc      1 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/index.html
+-------------------------------------------------------------
+Query: home page
+Matches 1 documents (ranked): 
+score     1  doc      1 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/index.html
+-------------------------------------------------------------
+Query: home page or playground
+Matches 1 documents (ranked): 
+score     2  doc      1 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/index.html
+-------------------------------------------------------------
+Query: home page playground and this
+Matches 1 documents (ranked): 
+score     1  doc      1 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/index.html
+-------------------------------------------------------------
+Query: playground or this or home and page or tse
+Matches 1 documents (ranked): 
+score     4  doc      1 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/index.html
+-------------------------------------------------------------
+Query: playground or this or home and page or tse
+Matches 1 documents (ranked): 
+score     4  doc      1 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/index.html
+-------------------------------------------------------------
+Query: we or went or to or the or home
+Matches 6 documents (ranked): 
+score     3  doc      1 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/index.html
+score     1  doc      2 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/A.html
+score     1  doc      3 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/B.html
+score     1  doc      4 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/E.html
+score     1  doc      5 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/D.html
+score     1  doc      6 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/C.html
+-------------------------------------------------------------
+Query: tse or for breadth or the first
+Matches 2 documents (ranked): 
+score     1  doc      3 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/B.html
+score     1  doc      1 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/index.html
+-------------------------------------------------------------
+Query: tse this or biology
+Matches 2 documents (ranked): 
+score     1  doc      6 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/C.html
+score     1  doc      1 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/index.html
+-------------------------------------------------------------
+./querier ../data/tse-output/letters-depth-6 ../data/tse-output/letters-index-6 < letterstest.txt
+Query: home or page
+Matches 9 documents (ranked): 
+score     3  doc      1 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/index.html
+score     1  doc      2 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/A.html
+score     1  doc      3 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/B.html
+score     1  doc      4 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/E.html
+score     1  doc      5 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/G.html
+score     1  doc      6 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/H.html
+score     1  doc      7 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/F.html
+score     1  doc      8 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/D.html
+score     1  doc      9 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/C.html
+-------------------------------------------------------------
+Query: home and page
+Matches 1 documents (ranked): 
+score     1  doc      1 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/index.html
+-------------------------------------------------------------
+Query: home page
+Matches 1 documents (ranked): 
+score     1  doc      1 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/index.html
+-------------------------------------------------------------
+Query: home page or playground
+Matches 1 documents (ranked): 
+score     2  doc      1 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/index.html
+-------------------------------------------------------------
+Query: home page playground and this
+Matches 1 documents (ranked): 
+score     1  doc      1 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/index.html
+-------------------------------------------------------------
+Query: playground or this or home and page or tse
+Matches 1 documents (ranked): 
+score     4  doc      1 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/index.html
+-------------------------------------------------------------
+Query: playground or this or home and page or tse
+Matches 1 documents (ranked): 
+score     4  doc      1 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/index.html
+-------------------------------------------------------------
+Query: we or went or to or the or home
+Matches 9 documents (ranked): 
+score     3  doc      1 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/index.html
+score     1  doc      2 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/A.html
+score     1  doc      3 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/B.html
+score     1  doc      4 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/E.html
+score     1  doc      5 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/G.html
+score     1  doc      6 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/H.html
+score     1  doc      7 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/F.html
+score     1  doc      8 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/D.html
+score     1  doc      9 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/C.html
+-------------------------------------------------------------
+Query: tse or for breadth or the first
+Matches 2 documents (ranked): 
+score     1  doc      3 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/B.html
+score     1  doc      1 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/index.html
+-------------------------------------------------------------
+Query: tse this or biology
+Matches 2 documents (ranked): 
+score     1  doc      9 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/C.html
+score     1  doc      1 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/index.html
+-------------------------------------------------------------
+./fuzzquery ../data/tse-output/letters-index-6 10 0 | ./querier ../data/tse-output/letters-depth-6 ../data/tse-output/letters-index-0
+./fuzzquery: generating 10 queries from 22 words
+Bad character '-'
+Query: fourier and traversal
+No docments match
+-------------------------------------------------------------
+Query: this or the the or tse computational
+Matches 1 documents (ranked): 
+score     2  doc      1 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/index.html
+-------------------------------------------------------------
+Query: biology playground or computational
+No docments match
+-------------------------------------------------------------
+-------------------------------------------------------------
+Query: algorithm or coding eniac the and home or breadth
+No docments match
+-------------------------------------------------------------
+Query: traversal computational playground coding or the
+Matches 1 documents (ranked): 
+score     1  doc      1 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/index.html
+-------------------------------------------------------------
+Query: fast
+No docments match
+-------------------------------------------------------------
+Query: search the or fast
+No docments match
+-------------------------------------------------------------
+Query: home
+Matches 1 documents (ranked): 
+score     2  doc      1 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/letters/index.html
+-------------------------------------------------------------
+Query: transform or huffman or depth and graph and transform
+No docments match
+-------------------------------------------------------------
+
+##toscrape test
+./fuzzquery ../data/tse-output/toscrape-index-1 10 0 | ./querier ../data/tse-output/toscrape-depth-1 ../data/tse-output/toscrape-index-1
+./fuzzquery: generating 10 queries from 2326 words
+Bad character '-'
+Query: years and wax
+Matches 1 documents (ranked): 
+score     1  doc      5 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/toscrape/catalogue/mesaerion-the-best-science-fiction-stories-1800-1849_983/index.html
+-------------------------------------------------------------
+Query: ends or aficionados recognized or classic objects
+Matches 2 documents (ranked): 
+score     1  doc     19 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/toscrape/catalogue/sharp-objects_997/index.html
+score     1  doc     71 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/toscrape/catalogue/category/books/mystery_3/index.html
+-------------------------------------------------------------
+Query: recognize available or monkey
+Matches 2 documents (ranked): 
+score     1  doc      3 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/toscrape/catalogue/its-only-the-himalayas_981/index.html
+score     1  doc     13 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/toscrape/catalogue/the-black-maria_991/index.html
+-------------------------------------------------------------
+-------------------------------------------------------------
+Query: comiques or university watson evaluating and rush or childrens
+Matches 10 documents (ranked): 
+score     4  doc     63 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/toscrape/catalogue/category/books/childrens_11/index.html
+score     1  doc      1 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/toscrape/index.html
+score     1  doc      2 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/toscrape/catalogue/page-2.html
+score     1  doc     23 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/toscrape/catalogue/category/books/crime_51/index.html
+score     1  doc     24 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/toscrape/catalogue/category/books/erotica_50/index.html
+score     1  doc     25 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/toscrape/catalogue/category/books/cultural_49/index.html
+score     1  doc     26 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/toscrape/catalogue/category/books/politics_48/index.html
+score     1  doc     27 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/toscrape/catalogue/category/books/health_47/index.html
+score     1  doc     28 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/toscrape/catalogue/category/books/novels_46/index.html
+score     1  doc     29 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/toscrape/catalogue/category/books/short-stories_45/index.html
+-------------------------------------------------------------
+Query: totally when diary bedfored or association
+Matches 1 documents (ranked): 
+score     1  doc     15 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/toscrape/catalogue/the-coming-woman-a-novel-based-on-the-life-of-the-infamous-feminist-victoria-woodhull_993/index.html
+-------------------------------------------------------------
+Query: worrying
+Matches 1 documents (ranked): 
+score     1  doc     33 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/toscrape/catalogue/category/books/self-help_41/index.html
+-------------------------------------------------------------
+Query: young member or horror
+Matches 10 documents (ranked): 
+score     4  doc     43 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/toscrape/catalogue/category/books/horror_31/index.html
+score     1  doc      1 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/toscrape/index.html
+score     1  doc      2 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/toscrape/catalogue/page-2.html
+score     1  doc     23 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/toscrape/catalogue/category/books/crime_51/index.html
+score     1  doc     24 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/toscrape/catalogue/category/books/erotica_50/index.html
+score     1  doc     25 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/toscrape/catalogue/category/books/cultural_49/index.html
+score     1  doc     26 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/toscrape/catalogue/category/books/politics_48/index.html
+score     1  doc     27 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/toscrape/catalogue/category/books/health_47/index.html
+score     1  doc     28 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/toscrape/catalogue/category/books/novels_46/index.html
+score     1  doc     29 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/toscrape/catalogue/category/books/short-stories_45/index.html
+-------------------------------------------------------------
+Query: lyrics
+Matches 1 documents (ranked): 
+score     2  doc     17 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/toscrape/catalogue/the-requiem-red_995/index.html
+-------------------------------------------------------------
+Query: flying or knot or freed and cruising and blessed
+Matches 2 documents (ranked): 
+score     1  doc     65 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/toscrape/catalogue/category/books/womens-fiction_9/index.html
+score     1  doc      5 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/toscrape/catalogue/mesaerion-the-best-science-fiction-stories-1800-1849_983/index.html
+-------------------------------------------------------------
+./fuzzquery ../data/tse-output/toscrape-index-2 10 0 | ./querier ../data/tse-output/toscrape-depth-2 ../data/tse-output/toscrape-index-2
+./fuzzquery: generating 10 queries from 13563 words
+Bad character '-'
+Query: inthe and quarters
+No docments match
+-------------------------------------------------------------
+Query: hangs or visited kahneman or beneath shopping
+Matches 3 documents (ranked): 
+score     1  doc    171 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/toscrape/catalogue/night-shift-night-shift-1-20_335/index.html
+score     1  doc    536 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/toscrape/catalogue/the-last-painting-of-sara-de-vos_259/index.html
+score     1  doc    569 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/toscrape/catalogue/the-last-mile-amos-decker-2_754/index.html
+-------------------------------------------------------------
+Query: nationally holery or predicts
+Matches 1 documents (ranked): 
+score     1  doc    246 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/toscrape/catalogue/the-grand-design_405/index.html
+-------------------------------------------------------------
+-------------------------------------------------------------
+Query: endowment or cosmic lover sketchbook and priest or bfed
+Matches 2 documents (ranked): 
+score     1  doc     20 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/toscrape/catalogue/black-dust_976/index.html
+score     1  doc     28 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/toscrape/catalogue/olio_984/index.html
+-------------------------------------------------------------
+Query: orientation iceland describe worse or defeating
+Matches 1 documents (ranked): 
+score     2  doc    499 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/toscrape/catalogue/beowulf_126/index.html
+-------------------------------------------------------------
+Query: clerks
+Matches 1 documents (ranked): 
+score     1  doc    157 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/toscrape/catalogue/a-distant-mirror-the-calamitous-14th-century_652/index.html
+-------------------------------------------------------------
+Query: arnold streusel or braved
+Matches 1 documents (ranked): 
+score     1  doc    150 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/toscrape/catalogue/the-mathews-men-seven-brothers-and-the-war-against-hitlers-u-boats_408/index.html
+-------------------------------------------------------------
+Query: multiplatform
+Matches 1 documents (ranked): 
+score     1  doc    204 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/toscrape/catalogue/m-train_598/index.html
+-------------------------------------------------------------
+Query: patience or nightstruck or bowerbird and antoinette and stances
+Matches 9 documents (ranked): 
+score     5  doc    524 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/toscrape/catalogue/patience_916/index.html
+score     1  doc    255 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/toscrape/catalogue/category/books/young-adult_21/page-2.html
+score     1  doc    511 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/toscrape/catalogue/category/books/sequential-art_5/index.html
+score     1  doc    518 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/toscrape/catalogue/i-hate-fairyland-vol-1-madly-ever-after-i-hate-fairyland-compilations-1-5_899/index.html
+score     1  doc    519 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/toscrape/catalogue/lumberjanes-vol-3-a-terrible-plan-lumberjanes-9-12_905/index.html
+score     1  doc    520 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/toscrape/catalogue/lumberjanes-vol-1-beware-the-kitten-holy-lumberjanes-1-4_906/index.html
+score     1  doc    521 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/toscrape/catalogue/lumberjanes-vol-2-friendship-to-the-max-lumberjanes-5-8_907/index.html
+score     1  doc    522 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/toscrape/catalogue/orange-the-complete-collection-1-orange-the-complete-collection-1_914/index.html
+score     1  doc    523 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/toscrape/catalogue/outcast-vol-1-a-darkness-surrounds-him-outcast-1_915/index.html
+-------------------------------------------------------------
+
+##wikipedia test
+./querier ../data/tse-output/wikipedia-depth-2 ../data/tse-output/wikipedia-index-2 < wikitest.txt
+Query: dartmouth or computer science or programming or unix
+Matches 10 documents (ranked): 
+score   422  doc    212 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/wikipedia/Dartmouth_College.html
+score   287  doc    293 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/wikipedia/The_Tabard_(fraternity).html
+score   287  doc    591 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/wikipedia/Dartmouth_College_Greek_organizations.html
+score   259  doc    282 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/wikipedia/Dartmouth_Forensic_Union.html
+score   255  doc    491 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/wikipedia/Dartmouth_College_student_groups.html
+score   227  doc   1561 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/wikipedia/Programming_languages.html
+score   225  doc     57 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/wikipedia/Programming_language.html
+score   222  doc    615 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/wikipedia/Unix.html
+score   195  doc   1365 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/wikipedia/Computer_science.html
+score   140  doc    601 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/wikipedia/Dartmouth_Big_Green.html
+-------------------------------------------------------------
+./fuzzquery ../data/tse-output/wikipedia-index-2 10 0 | ./querier ../data/tse-output/wikipedia-depth-1 ../data/tse-output/wikipedia-index-1
+./fuzzquery: generating 10 queries from 101588 words
+Bad character '-'
+Query: herded and fka
+No docments match
+-------------------------------------------------------------
+Query: sijil or csharpfriends hermajakob or mcdowell tuusula
+No docments match
+-------------------------------------------------------------
+Query: circumcision setiched or athenasmi
+No docments match
+-------------------------------------------------------------
+-------------------------------------------------------------
+Query: liar or cwa autoconfirmed southernspaces and clinger or schwaz
+No docments match
+-------------------------------------------------------------
+Query: endian scotts bigram laforenza or rpsl
+No docments match
+-------------------------------------------------------------
+Query: atmegaxx
+No docments match
+-------------------------------------------------------------
+Query: deck iam or thanksgiving
+No docments match
+-------------------------------------------------------------
+Query: limb
+No docments match
+-------------------------------------------------------------
+Query: intellimouse or nickname or builder and mask and magdy
+Matches 6 documents (ranked): 
+score     7  doc      4 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/wikipedia/Dartmouth_College.html
+score     1  doc      7 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/wikipedia/Computer_science.html
+score     1  doc      6 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/wikipedia/C_(programming_language).html
+score     1  doc      5 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/wikipedia/Unix.html
+score     1  doc      3 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/wikipedia/Hash_table.html
+score     1  doc      2 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/wikipedia/Linked_list.html
+-------------------------------------------------------------
+./fuzzquery ../data/tse-output/wikipedia-index-2 10 0 | ./querier ../data/tse-output/wikipedia-depth-2 ../data/tse-output/wikipedia-index-2
+./fuzzquery: generating 10 queries from 101588 words
+Bad character '-'
+Query: herded and fka
+No docments match
+-------------------------------------------------------------
+Query: sijil or csharpfriends hermajakob or mcdowell tuusula
+Matches 1 documents (ranked): 
+score     1  doc   1507 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/wikipedia/Secondary_school.html
+-------------------------------------------------------------
+Query: circumcision setiched or athenasmi
+Matches 1 documents (ranked): 
+score     1  doc   1435 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/wikipedia/Green_building.html
+-------------------------------------------------------------
+-------------------------------------------------------------
+Query: liar or cwa autoconfirmed southernspaces and clinger or schwaz
+Matches 10 documents (ranked): 
+score     2  doc    351 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/wikipedia/Friday_Night_Lights_(TV_series).html
+score     2  doc    355 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/wikipedia/24_(TV_series).html
+score     2  doc   1546 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/wikipedia/Robotics.html
+score     1  doc   1422 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/wikipedia/Mining_engineering.html
+score     1  doc    284 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/wikipedia/Dartmouth_pong.html
+score     1  doc    368 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/wikipedia/Scandal_(TV_series).html
+score     1  doc    370 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/wikipedia/Shonda_Rhimes.html
+score     1  doc   1108 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/wikipedia/W._W.html
+score     1  doc   1639 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/wikipedia/Undecidable_problem.html
+score     1  doc   1666 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/wikipedia/Algorithm.html
+-------------------------------------------------------------
+Query: endian scotts bigram laforenza or rpsl
+Matches 1 documents (ranked): 
+score     1  doc   1475 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/wikipedia/Routing.html
+-------------------------------------------------------------
+Query: atmegaxx
+Matches 1 documents (ranked): 
+score     1  doc   1295 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/wikipedia/Microcontroller.html
+-------------------------------------------------------------
+Query: deck iam or thanksgiving
+Matches 10 documents (ranked): 
+score     2  doc    480 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/wikipedia/Division_I_(NCAA).html
+score     1  doc    526 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/wikipedia/Academic_term.html
+score     1  doc    522 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/wikipedia/New_England.html
+score     1  doc    455 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/wikipedia/The_Wall_Street_Journal.html
+score     1  doc    430 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/wikipedia/Robert_Christgau.html
+score     1  doc    366 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/wikipedia/Ice_Age_(franchise).html
+score     1  doc    356 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/wikipedia/Friends.html
+score     1  doc    304 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/wikipedia/William_Jewell_College.html
+score     1  doc    301 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/wikipedia/Dartmouth_Big_Green_football.html
+score     1  doc    262 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/wikipedia/Boston_College.html
+-------------------------------------------------------------
+Query: limb
+Matches 6 documents (ranked): 
+score     2  doc   1458 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/wikipedia/Biomechatronics.html
+score     1  doc   1369 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/wikipedia/Transhumanism.html
+score     1  doc   1465 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/wikipedia/Virtual_reality.html
+score     1  doc   1528 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/wikipedia/Special_effects.html
+score     1  doc   1546 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/wikipedia/Robotics.html
+score     1  doc   1615 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/wikipedia/Simulation.html
+-------------------------------------------------------------
+Query: intellimouse or nickname or builder and mask and magdy
+Matches 10 documents (ranked): 
+score    14  doc    602 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/wikipedia/Athletic_nickname.html
+score     7  doc    601 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/wikipedia/Dartmouth_Big_Green.html
+score     7  doc    212 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/wikipedia/Dartmouth_College.html
+score     6  doc    266 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/wikipedia/Syracuse_Orange.html
+score     5  doc    480 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/wikipedia/Division_I_(NCAA).html
+score     4  doc    935 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/wikipedia/Bill_Clinton.html
+score     4  doc    389 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/wikipedia/IBM.html
+score     4  doc    278 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/wikipedia/Cornell_Big_Red.html
+score     4  doc    272 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/wikipedia/Georgetown_Hoyas.html
+score     4  doc    271 : http://old-www.cs.dartmouth.edu/~cs50/data/tse/wikipedia/Holy_Cross_Crusaders.html
+-------------------------------------------------------------
+
+exit
